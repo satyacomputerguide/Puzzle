@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Universal Block Puzzle</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background: #2c3e50;
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            color: white;
+            overflow: hidden;
+        }
+
+        #game-container {
+            position: relative;
+            margin-top: 20px;
+        }
+
+        #game-grid {
+            display: grid;
+            grid-template-columns: repeat(10, 1fr);
+            gap: 1px;
+            background: #34495e;
+            border: 2px solid #2c3e50;
+            border-radius: 5px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.3);
+        }
+
+        .cell {
+            width: 4.5vw;
+            height: 4.5vw;
+            max-width: 30px;
+            max-height: 30px;
+            background: #2c3e50;
+            transition: background-color 0.1s;
+        }
+
+        .block {
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        #info-panel {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background: rgba(0,0,0,0.7);
+            padding: 15px;
+            border-radius: 10px;
+            backdrop-filter: blur(5px);
+        }
+
+        .controls {
+            position: fixed;
+            bottom: 20px;
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            width: 80%;
+            max-width: 300px;
+            touch-action: none;
+        }
+
+        .control-btn {
+            background: rgba(255,255,255,0.1);
+            border: none;
+            border-radius: 15px;
+            color: white;
+            padding: 15px;
+            font-size: 24px;
+            text-align: center;
+            user-select: none;
+            transition: background 0.1s;
+        }
+
+        .control-btn:active {
+            background: rgba(255,255,255,0.3);
+        }
+
+        #rotate-btn {
+            grid-column: 1 / 4;
+        }
+
+        @media (min-width: 768px) {
+            .controls {
+                display: none;
+            }
+            
+            .cell {
+                width: 30px;
+                height: 30px;
+            }
+            
+            #info-panel {
+                right: 20px;
+                left: auto;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="info-panel">
+        <h2>Score: <span id="score">0</span></h2>
+        <h3>Level: <span id="level">1</span></h3>
+        <p>Next Piece:</p>
+        <div id="next-piece"></div>
+    </div>
+
+    <div id="game-container">
+        <div id="game-grid"></div>
+    </div>
+
+    <div class="controls">
+        <button class="control-btn" id="left-btn">←</button>
+        <button class="control-btn" id="down-btn">↓</button>
+        <button class="control-btn" id="right-btn">→</button>
+        <button class="control-btn" id="rotate-btn">↻ Rotate</button>
+    </div>
+
+    <script>
+        const WIDTH = 10;
+        const HEIGHT = 20;
+        const SHAPES = ['I', 'O', 'T', 'L', 'J', 'S', 'Z'];
+        const COLORS = {
+            'I': '#00f0f0', 'O': '#f0f000', 'T': '#a000f0',
+            'L': '#f0a000', 'J': '#0000f0', 'S': '#00f000',
+            'Z': '#f00000'
+        };
+
+        class BlockGame {
+            constructor() {
+                this.grid = Array(HEIGHT).fill().map(() => Array(WIDTH).fill(null));
+                this.score = 0;
+                this.level = 1;
+                this.gameOver = false;
+                this.initGrid();
+                this.spawnPiece();
+                this.setupControls();
+                this.gameLoop();
+                this.lastFrame = performance.now();
+                this.deltaTime = 0;
+            }
+
+            initGrid() {
+                const grid = document.getElementById('game-grid');
+                grid.innerHTML = '';
+                for (let y = 0; y < HEIGHT; y++) {
+                    for (let x = 0; x < WIDTH; x++) {
+                        const cell = document.createElement('div');
+                        cell.className = 'cell';
+                        cell.dataset.x = x;
+                        cell.dataset.y = y;
+                        grid.appendChild(cell);
+                    }
+                }
+            }
+
+            createPiece() {
+                const type = SHAPES[Math.floor(Math.random() * SHAPES.length)];
+                return {
+                    shape: this.getShape(type),
+                    color: COLORS[type],
+                    x: Math.floor(WIDTH/2) - 2,
+                    y: 0
+                };
+            }
+
+            getShape(type) {
+                const shapes = {
+                    'I': [[1,1,1,1]],
+                    'O': [[1,1],[1,1]],
+                    'T': [[0,1,0],[1,1,1]],
+                    'L': [[1,0],[1,0],[1,1]],
+                    'J': [[0,1],[0,1],[1,1]],
+                    'S': [[0,1,1],[1,1,0]],
+                    'Z': [[1,1,0],[0,1,1]]
+                };
+                return shapes[type];
+            }
+
+            spawnPiece() {
+                this.currentPiece = this.createPiece();
+                if (this.checkCollision(0, 0)) {
+                    this.gameOver = true;
+                    alert(`Game Over! Score: ${this.score}`);
+                }
+            }
+
+            updateGrid() {
+                document.querySelectorAll('.cell').forEach(cell => {
+                    const x = parseInt(cell.dataset.x);
+                    const y = parseInt(cell.dataset.y);
+                    cell.style.backgroundColor = this.grid[y][x] || '#2c3e50';
+                });
+
+                this.currentPiece.shape.forEach((row, dy) => {
+                    row.forEach((cell, dx) => {
+                        if (cell) {
+                            const x = this.currentPiece.x + dx;
+                            const y = this.currentPiece.y + dy;
+                            if (y >= 0 && x >= 0 && x < WIDTH) {
+                                const cellElem = document.querySelector(
+                                    `[data-x="${x}"][data-y="${y}"]`
+                                );
+                                if (cellElem) {
+                                    cellElem.style.backgroundColor = this.currentPiece.color;
+                                }
+                            }
+                        }
+                    });
+                });
+            }
+
+            checkCollision(dx, dy) {
+                return this.currentPiece.shape.some((row, y) =>
+                    row.some((cell, x) => {
+                        if (!cell) return false;
+                        const nx = this.currentPiece.x + x + dx;
+                        const ny = this.currentPiece.y + y + dy;
+                        return nx < 0 || nx >= WIDTH || ny >= HEIGHT || 
+                               (ny >= 0 && this.grid[ny][nx]);
+                    })
+                );
+            }
+
+            lockPiece() {
+                this.currentPiece.shape.forEach((row, y) => {
+                    row.forEach((cell, x) => {
+                        if (cell) {
+                            const gy = this.currentPiece.y + y;
+                            const gx = this.currentPiece.x + x;
+                            if (gy >= 0) this.grid[gy][gx] = this.currentPiece.color;
+                        }
+                    });
+                });
+                this.clearLines();
+                this.spawnPiece();
+            }
+
+            clearLines() {
+                let linesCleared = 0;
+                for (let y = HEIGHT - 1; y >= 0; y--) {
+                    if (this.grid[y].every(cell => cell)) {
+                        this.grid.splice(y, 1);
+                        this.grid.unshift(Array(WIDTH).fill(null));
+                        linesCleared++;
+                        y++;
+                    }
+                }
+                if (linesCleared > 0) {
+                    this.score += linesCleared * 100 * this.level;
+                    this.level = Math.floor(this.score / 1000) + 1;
+                    document.getElementById('score').textContent = this.score;
+                    document.getElementById('level').textContent = this.level;
+                }
+            }
+
+            setupControls() {
+                // Touch/Mouse controls
+                const controls = {
+                    left: () => { if (!this.checkCollision(-1, 0)) this.currentPiece.x-- },
+                    right: () => { if (!this.checkCollision(1, 0)) this.currentPiece.x++ },
+                    down: () => { if (!this.checkCollision(0, 1)) this.currentPiece.y++ },
+                    rotate: () => {
+                        const rotated = this.currentPiece.shape[0]
+                            .map((_, i) => this.currentPiece.shape
+                            .map(row => row[i]).reverse());
+                        const original = this.currentPiece.shape;
+                        this.currentPiece.shape = rotated;
+                        if (this.checkCollision(0, 0)) {
+                            this.currentPiece.shape = original;
+                        }
+                    },
+                    hardDrop: () => {
+                        while (!this.checkCollision(0, 1)) {
+                            this.currentPiece.y++;
+                        }
+                        this.lockPiece();
+                    }
+                };
+
+                // Button controls
+                ['left', 'right', 'down', 'rotate'].forEach(action => {
+                    document.getElementById(`${action}-btn`).addEventListener(
+                        'mousedown', controls[action]);
+                    document.getElementById(`${action}-btn`).addEventListener(
+                        'touchstart', (e) => {
+                            e.preventDefault();
+                            controls[action]();
+                        });
+                });
+
+                // Keyboard controls
+                document.addEventListener('keydown', (e) => {
+                    if (this.gameOver) return;
+                    switch(e.key) {
+                        case 'ArrowLeft': controls.left(); break;
+                        case 'ArrowRight': controls.right(); break;
+                        case 'ArrowDown': controls.down(); break;
+                        case 'ArrowUp': controls.rotate(); break;
+                        case ' ': controls.hardDrop(); break;
+                    }
+                });
+
+                // Swipe controls
+                let touchStart = null;
+                document.addEventListener('touchstart', e => {
+                    touchStart = e.touches[0].clientX;
+                }, {passive: true});
+
+                document.addEventListener('touchmove', e => {
+                    e.preventDefault();
+                }, {passive: false});
+
+                document.addEventListener('touchend', e => {
+                    if (!touchStart) return;
+                    const touchEnd = e.changedTouches[0].clientX;
+                    const diff = touchEnd - touchStart;
+                    if (Math.abs(diff) > 50) {
+                        diff > 0 ? controls.right() : controls.left();
+                    }
+                    touchStart = null;
+                });
+            }
+
+            gameLoop(currentTime) {
+                if (this.gameOver) return;
+
+                this.deltaTime += currentTime - this.lastFrame;
+                this.lastFrame = currentTime;
+
+                if (this.deltaTime > 1000 / this.level) {
+                    if (!this.checkCollision(0, 1)) {
+                        this.currentPiece.y++;
+                    } else {
+                        this.lockPiece();
+                    }
+                    this.deltaTime = 0;
+                }
+
+                this.updateGrid();
+                requestAnimationFrame((time) => this.gameLoop(time));
+            }
+        }
+
+        // Initialize game
+        new BlockGame();
+    </script>
+</body>
+</html>
